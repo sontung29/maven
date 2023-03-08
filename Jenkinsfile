@@ -1,62 +1,69 @@
+//Jenkinsfile
 pipeline {
     agent any
-	
-	  tools
-    {
-       maven "Maven"
+    environment{
+        DOCKER_IMAGE        = "tungms/maven"
     }
- stages {
-      stage('checkout') {
-           steps {
-             
-                git branch: 'master', url: 'https://github.com/devops4solutions/CI-CD-using-Docker.git'
-             
-          }
-        }
-	 stage('Execute Maven') {
+    tools
+    {
+       maven "maven"
+    }
+    stages {
+	stage('Execute Maven') {
            steps {
              
                 sh 'mvn package'             
           }
         }
-        
-
-  stage('Docker Build and Tag') {
-           steps {
-              
-                sh 'docker build -t samplewebapp:latest .' 
-                sh 'docker tag samplewebapp nikhilnidhi/samplewebapp:latest'
-                //sh 'docker tag samplewebapp nikhilnidhi/samplewebapp:$BUILD_NUMBER'
-               
-          }
-        }
-     
-  stage('Publish image to Docker Hub') {
-          
+        stage("Build"){
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
+            environment {
+                DOCKER_TAG="${GIT_BRANCH.tokenize('/').pop()}-${GIT_COMMIT.substring(0,7)}"
+            }
             steps {
-        withDockerRegistry([ credentialsId: "dockerHub", url: "" ]) {
-          sh  'docker push nikhilnidhi/samplewebapp:latest'
-        //  sh  'docker push nikhilnidhi/samplewebapp:$BUILD_NUMBER' 
-        }
-                  
-          }
-        }
-     
-      stage('Run Docker container on Jenkins Agent') {
-             
-            steps 
-			{
-                sh "docker run -d -p 8003:8080 nikhilnidhi/samplewebapp"
- 
+                sh '''
+                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -f Dockerfile . 
+                    docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
+                    docker image ls | grep ${DOCKER_IMAGE}'''
+                withCredentials([usernamePassword(credentialsId: 'docker-hub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')])
+                {
+                    sh 'echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin'
+                    sh "docker push ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                    sh "docker push ${DOCKER_IMAGE}:latest"
+                }
+// clean to save disk
+                sh "docker image rm ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                sh "docker image rm ${DOCKER_IMAGE}:latest"
             }
         }
- stage('Run Docker container on remote hosts') {
-             
+        stage("Deploy"){
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
             steps {
-                sh "docker -H ssh://jenkins@172.31.28.25 run -d -p 8003:8080 nikhilnidhi/samplewebapp"
- 
+                withCredentials([usernamePassword(credentialsId: 'docker-hub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                    ansiblePlaybook(
+                        credentialsId: 'ssh-key',
+                        playbook: 'playbook.yml',
+                        inventory: 'hosts',
+                        become: 'yes',
+                        extraVars: [
+                            DOCKER_USERNAME: "${DOCKER_USERNAME}",
+                            DOCKER_PASSWORD: "${DOCKER_PASSWORD}" 
+                        ]
+                    )
+                }
             }
         }
     }
-	}
-    
+    post {
+        success {
+            echo "SUCCESSFULL"
+        }
+        failure {
+            echo "FAILED"
+        }
+    }
+}
