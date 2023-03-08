@@ -18,7 +18,7 @@
       shell: docker login -u "{{DOCKER_USERNAME}}" -p "{{DOCKER_PASSWORD}}"
     - name: Copy file
       copy:
-        src: docker-compose.yaml
+        src: docker-compose.yml
         dest: /root/maven/
     - name: Restart docker-compose
       shell: |
