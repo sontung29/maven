@@ -19,7 +19,7 @@
     - name: Copy file
       copy:
         src: docker-compose.yaml
-        dest: /root/nginx/
+        dest: /root/maven/
     - name: Restart docker-compose
       shell: |
           docker compose stop
@@ -27,6 +27,6 @@
           docker compose pull
           docker compose up -d
       args:
-          chdir: /root/nginx/
+          chdir: /root/maven/
 ...
   
